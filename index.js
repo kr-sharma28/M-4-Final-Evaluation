@@ -219,3 +219,43 @@ router.post('/appointments/request-delete/:id', async (req, res) => {
 });
 
 module.exports = router;
+
+
+//node-cron
+
+let cron = require('node-cron');
+let redis = require('redis');
+let client = redis.createClient();
+
+cron.schedule('*/2 * * * *', async () => {
+  client.keys('*', async (err, keys) => {
+    if (err) throw err;
+    for (const key of keys) {
+      client.get(key, async (err, data) => {
+        if (err) throw err;
+        const request = JSON.parse(data);
+        const age = (new Date() - new Date(request.requestedAt)) / 1000;
+        if (age > 120) {  // request older than 2 minutes
+          const appointment = await Appointment.findById(key);
+          await appointment.remove();
+          client.del(key);
+        }
+      });
+    }
+  });
+});
+
+
+//Testing and CI/CD
+
+let request = require('supertest');
+let app = require('../app');
+
+test('Register user', async () => {
+  let response = await request(app)
+    .post('/auth/register')
+    .send({ name: 'John Doe', email: 'john@example.com', password: 'password', role: 'patient' });
+
+  expect(response.status).toBe(201);
+  expect(response.body.message).toBe('User registered successfully');
+});
